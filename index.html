@@ -38,7 +38,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
     <link rel="preload" as="image" href="images/galleria/foto38.jpg" fetchpriority="high">
-    <link rel="stylesheet" href="style.css?v=16">
+    <link rel="stylesheet" href="style.css?v=20">
     <script>document.documentElement.classList.add('js');</script>
 
     <!-- Dati strutturati -->
@@ -319,10 +319,13 @@
         <!-- CHI SIAMO -->
         <section class="section about" id="about" aria-labelledby="about-title">
             <div class="container">
-                <!-- Facciata 3D: blocchi di calcare, portone, targa e finestra ad arco (script.js); sotto la versione di riserva -->
-                <div class="stage3d" id="about-stage" hidden>
+                <!-- Arco 3D come nella hero: si costruisce, poi la camera entra e la foto del soggiorno si apre (script.js); sotto la versione di riserva -->
+                <div class="stage3d about-fly" id="about-stage" hidden>
                     <div class="stage3d-sticky">
-                        <canvas class="stage3d-canvas" id="about-canvas" role="img" aria-label="Facciata in pietra della Dimora con il portone, la targa e una finestra ad arco con la foto del soggiorno"></canvas>
+                        <canvas class="stage3d-canvas" id="about-canvas" role="img" aria-label="Arco in pietra con la foto del soggiorno della Dimora"></canvas>
+                        <div class="hero-reveal about-reveal" id="about-reveal" aria-hidden="true">
+                            <img data-src="images/galleria/foto5.jpg" alt="" width="1280" height="851" decoding="async">
+                        </div>
                         <div class="stage3d-panel" id="about-panel" aria-live="polite"></div>
                         <div class="stage3d-dots" id="about-dots" aria-hidden="true"></div>
                     </div>
@@ -453,16 +456,9 @@
                     </a>
                 </div>
 
-                <!-- Lastra di calcare 3D con l'indirizzo inciso (incisione disegnata da script.js) -->
-                <div class="lapide-stage" data-lapide>
-                    <div class="lapide">
-                        <div class="lapide-face lapide-front" id="lapide-front" role="img" aria-label="Lastra in pietra con inciso: La Dimora di Nonna Dora, Corso Vittorio Emanuele II nr.12, 74015 Martina Franca, Martina Franca · Valle d'Itria"></div>
-                        <div class="lapide-face lapide-back" aria-hidden="true"></div>
-                        <div class="lapide-face lapide-left" aria-hidden="true"></div>
-                        <div class="lapide-face lapide-right" aria-hidden="true"></div>
-                        <div class="lapide-face lapide-top" aria-hidden="true"></div>
-                        <div class="lapide-face lapide-bottom" aria-hidden="true"></div>
-                    </div>
+                <!-- Arco 3D con la foto del vicolo e l'indirizzo inciso sul basamento (script.js) -->
+                <div class="location-arch" id="location-arch" hidden>
+                    <canvas class="location-canvas" id="location-canvas" role="img" aria-label="Arco in pietra con la foto di un vicolo del centro storico di Martina Franca; sul basamento è inciso l'indirizzo Corso Vittorio Emanuele II nr.12, 74015 Martina Franca"></canvas>
                 </div>
             </div>
         </section>
@@ -615,13 +611,12 @@
                     <li><a href="https://wa.me/393770850432" target="_blank" rel="noopener" aria-label="Scrivici su WhatsApp (nuova scheda)"><svg class="icon" aria-hidden="true"><use href="#i-chat"/></svg></a></li>
                     <li><a href="https://www.booking.com/searchresults.it.html?aid=311091&amp;label=la-dimora-di-nonna-dora-OJYfq2eawpiv8nT4PDwX6AS625097917636%3Apl%3Ata%3Ap1%3Ap2%3Aac%3Aap%3Aneg%3Afi%3Atikwd-845574396850%3Alp9195689%3Ali%3Adec%3Adm%3Appccp%3DUmFuZG9tSVYkc2RlIyh9YR10fBTovuitU5KVyXYg8iQ&amp;gclid=Cj0KCQjwzt_FBhCEARIsAJGFWVkb31z8YTO3wbwO3E34k74flpHX9hueQOOV4sTQEKRnBc0hePN8id4aAncBEALw_wcB&amp;highlighted_hotels=5161849&amp;redirected=1&amp;city=-121224&amp;hlrd=no_dates&amp;source=hotel&amp;expand_sb=1&amp;keep_landing=1&amp;sid=17ae3fc8b6286f3df24779bda7e4bd88" target="_blank" rel="noopener" aria-label="La Dimora di Nonna Dora su Booking.com (nuova scheda)"><svg class="icon" aria-hidden="true"><use href="#i-bed"/></svg></a></li>
                 </ul>
+                <div class="footer-legal">
+                    <button class="footer-link" type="button" data-open-cookies>Cookies Policy</button>
+                    <p>&copy; 2026 La Dimora di Nonna Dora Casa Vacanza. Tutti i diritti sono riservati.</p>
+                    <p>Web by <a href="https://www.instagram.com/_matteomarino" target="_blank" rel="noopener">Matteo Marino</a></p>
+                </div>
             </div>
-        </div>
-
-        <div class="container footer-bottom">
-            <button class="footer-link" type="button" data-open-cookies>Cookies Policy</button>
-            <p>&copy; 2026 La Dimora di Nonna Dora Casa Vacanza. Tutti i diritti sono riservati.</p>
-            <p>Web by <a href="https://www.instagram.com/_matteomarino" target="_blank" rel="noopener">Matteo Marino</a></p>
         </div>
     </footer>
 
@@ -708,6 +703,6 @@
         </div>
     </dialog>
 
-    <script src="script.js?v=16" defer></script>
+    <script src="script.js?v=19" defer></script>
 </body>
 </html>

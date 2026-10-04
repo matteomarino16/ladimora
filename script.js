@@ -518,13 +518,16 @@ function createDust(THREE, count, box) {
     return { points: new THREE.Points(geometry, material), material, update };
 }
 
-// Il rendering gira solo quando la scena è visibile e la scheda è attiva
+// Il rendering gira solo quando la scena è visibile e la scheda è attiva.
+// Le scene lontane dallo schermo liberano la memoria grafica e la riprendono quando ci si avvicina:
+// con molte scene 3D nella stessa pagina i telefoni non superano il limite di contesti WebGL.
 function runWhenVisible(renderer, target, render) {
     render(performance.now()); // primo fotogramma subito: scena e testi già in posizione
     let running = false;
     let inView = false;
+    let released = false;
     const sync = () => {
-        const value = inView && !document.hidden;
+        const value = inView && !document.hidden && !released;
         if (value === running) return;
         running = value;
         renderer.setAnimationLoop(value ? render : null);
@@ -533,7 +536,41 @@ function runWhenVisible(renderer, target, render) {
         inView = entry.isIntersecting;
         sync();
     }).observe(target);
+    new IntersectionObserver(([entry]) => {
+        if (entry.isIntersecting && released) {
+            released = false;
+            renderer.forceContextRestore();
+        } else if (!entry.isIntersecting && !released) {
+            released = true;
+            renderer.forceContextLoss();
+        }
+        sync();
+    }, { rootMargin: '150% 0px' }).observe(target);
     document.addEventListener('visibilitychange', sync);
+}
+
+// Foto nitida della pagina sovrapposta al vano: stessa posizione e scala della texture,
+// mai ingrandita oltre la misura "cover"; poi la sagoma ad arco si allarga a tutto schermo
+function applyArchReveal(reveal, rect, view, photoAspect, visibility) {
+    const coverW = Math.max(view.w, view.h * photoAspect);
+    const coverH = coverW / photoAspect;
+    const matched = rect.height / coverH;
+    const radius = rect.width / 2;
+    const springPx = rect.top + radius;
+    const points = [`${rect.left.toFixed(1)}px ${rect.bottom.toFixed(1)}px`, `${rect.left.toFixed(1)}px ${springPx.toFixed(1)}px`];
+    for (let k = 1; k < 24; k += 1) {
+        const angle = Math.PI - (Math.PI * k) / 24;
+        points.push(`${(rect.left + radius + Math.cos(angle) * radius).toFixed(1)}px ${(springPx - Math.sin(angle) * radius).toFixed(1)}px`);
+    }
+    points.push(`${rect.right.toFixed(1)}px ${springPx.toFixed(1)}px`, `${rect.right.toFixed(1)}px ${rect.bottom.toFixed(1)}px`);
+
+    reveal.style.setProperty('--img-w', `${coverW.toFixed(1)}px`);
+    reveal.style.setProperty('--img-h', `${coverH.toFixed(1)}px`);
+    reveal.style.setProperty('--img-x', `${(rect.left + rect.width / 2 - view.w / 2).toFixed(1)}px`);
+    reveal.style.setProperty('--img-y', `${(rect.top + rect.height / 2 - view.h / 2).toFixed(1)}px`);
+    reveal.style.setProperty('--img-s', Math.min(matched, 1).toFixed(4));
+    reveal.style.setProperty('--reveal-clip', `polygon(${points.join(', ')})`);
+    reveal.style.setProperty('--reveal', (smoothstep(0.62, 0.85, matched) * visibility).toFixed(3));
 }
 
 // Progresso (0–1) dello scroll attraverso un elemento più alto dello schermo
@@ -722,31 +759,8 @@ async function initHero3D() {
             reveal.style.setProperty('--reveal-clip', `polygon(${points.map(([x, y]) => `${x.toFixed(1)}px ${y.toFixed(1)}px`).join(', ')})`);
             reveal.style.setProperty('--reveal', photoMaterial.opacity.toFixed(3));
         } else if (hero.classList.contains('is-fly')) {
-            // Foto nitida: stessa posizione e scala della texture nel vano, mai ingrandita oltre la misura "cover"
-            const rect = projectOpening(arch, camera, view.w, view.h);
-            const coverW = Math.max(view.w, view.h * photoAspect);
-            const coverH = coverW / photoAspect;
-            const matched = rect.height / coverH;
-            const scale = Math.min(matched, 1);
-            // Sagoma del vano: rettangolo + semicerchio, come poligono in pixel
-            const radius = rect.width / 2;
-            const springPx = rect.top + radius;
-            const points = [`${rect.left.toFixed(1)}px ${rect.bottom.toFixed(1)}px`, `${rect.left.toFixed(1)}px ${springPx.toFixed(1)}px`];
-            for (let k = 1; k < 24; k += 1) {
-                const angle = Math.PI - (Math.PI * k) / 24;
-                points.push(`${(rect.left + radius + Math.cos(angle) * radius).toFixed(1)}px ${(springPx - Math.sin(angle) * radius).toFixed(1)}px`);
-            }
-            points.push(`${rect.right.toFixed(1)}px ${springPx.toFixed(1)}px`, `${rect.right.toFixed(1)}px ${rect.bottom.toFixed(1)}px`);
-
-            reveal.style.setProperty('--img-w', `${coverW.toFixed(1)}px`);
-            reveal.style.setProperty('--img-h', `${coverH.toFixed(1)}px`);
-            reveal.style.setProperty('--img-x', `${(rect.left + rect.width / 2 - view.w / 2).toFixed(1)}px`);
-            reveal.style.setProperty('--img-y', `${(rect.top + rect.height / 2 - view.h / 2).toFixed(1)}px`);
-            reveal.style.setProperty('--img-s', scale.toFixed(4));
-            reveal.style.setProperty('--reveal-clip', `polygon(${points.join(', ')})`);
-            reveal.style.setProperty('--reveal', (smoothstep(0.62, 0.85, matched) * smoothstep(0.22, 0.3, p)).toFixed(3));
+            applyArchReveal(reveal, projectOpening(arch, camera, view.w, view.h), view, photoAspect, smoothstep(0.22, 0.3, p));
         }
-
 
         if (!revealed) {
             revealed = true;
@@ -1147,7 +1161,7 @@ async function initGallery3D(items, openAt) {
     const count = Math.min(10, items.length);
     const GAP = 3.3;
     const { renderer, scene } = createStoneScene(THREE, canvas, null);
-    scene.fog = new THREE.Fog(0xfaf8f4, 7, 24);
+    scene.fog = new THREE.Fog(0xeee3d2, 7, 24);
     const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 60);
     const kit = createArchKit(THREE, renderer, false);
 
@@ -1273,53 +1287,15 @@ async function initGallery3D(items, openAt) {
     return true;
 }
 
-// Generatore pseudo-casuale con seme: la facciata ha sempre lo stesso aspetto
-function seededRandom(seed) {
-    let a = seed;
-    return () => {
-        a = (a + 0x6d2b79f5) | 0;
-        let t = Math.imul(a ^ (a >>> 15), 1 | a);
-        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-}
-
-/* ---------- Lastra dell'indirizzo: incisione disegnata sulla pietra ---------- */
-async function initLapide() {
-    const front = document.getElementById('lapide-front');
-    if (!front) return;
-    try {
-        await Promise.all([
-            document.fonts?.load('500 64px "Cormorant Garamond"'),
-            document.fonts?.load('italic 500 40px "Cormorant Garamond"'),
-            document.fonts?.load('600 28px "Manrope"'),
-        ]);
-    } catch {
-        /* si incide con i font di sistema */
-    }
-    const canvas = paintEngravedStone(1000, 750, {
-        symbol: document.getElementById('i-pin'),
-        iconY: 0.2,
-        iconScale: 3.6,
-        frame: true,
-        lines: [
-            { text: 'La Dimora di Nonna Dora', font: '500 66px "Cormorant Garamond", serif', y: 0.42 },
-            { text: 'Corso Vittorio Emanuele II nr.12', font: '600 30px "Manrope", sans-serif', y: 0.555 },
-            { text: '74015 Martina Franca', font: '600 30px "Manrope", sans-serif', y: 0.625 },
-            { text: "Martina Franca · Valle d'Itria", font: 'italic 500 42px "Cormorant Garamond", serif', y: 0.79 },
-        ],
-    });
-    front.style.setProperty('--engraving', `url(${canvas.toDataURL('image/jpeg', 0.86)})`);
-}
-
-/* ---------- Facciata 3D di Chi Siamo: blocchi di calcare, portone, targa e finestra ad arco ---------- */
+/* ---------- Chi Siamo come la hero: l'arco si costruisce, poi la camera entra e la foto si apre ---------- */
 async function initAbout3D() {
     const section = document.getElementById('about');
     const stage = document.getElementById('about-stage');
     const sticky = stage?.querySelector('.stage3d-sticky');
     const canvas = document.getElementById('about-canvas');
+    const reveal = document.getElementById('about-reveal');
     const fallback = document.getElementById('about-fallback');
-    if (!section || !stage || !canvas || !fallback || !can3D()) return;
+    if (!section || !stage || !canvas || !reveal || !fallback || !can3D()) return;
 
     let THREE;
     try {
@@ -1337,108 +1313,143 @@ async function initAbout3D() {
         document.getElementById('about-panel'),
         document.getElementById('about-dots'),
         [...fallback.querySelectorAll('.about-step')],
-        110,
+        120,
     );
 
-    const { renderer, scene, sun } = createStoneScene(THREE, canvas, { size: 2048, box: { left: -7, right: 7, top: 7, bottom: -3 } });
-    sun.position.set(-5, 8, 7);
-    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
-    const stone = createStoneTextures(THREE);
-    const anisotropy = renderer.capabilities.getMaxAnisotropy();
-    const random = seededRandom(12);
+    const PHOTO = 'images/galleria/foto5.jpg';
+    const photoAspect = 1280 / 851;
+    const revealImg = reveal.querySelector('img');
+    if (revealImg?.dataset.src) revealImg.src = revealImg.dataset.src;
 
-    const WALL_W = 9.6;
-    const WALL_H = 4.8;
-    const DEPTH = 0.5;
-    const COURSE = 0.4;
-    const door = { x: -1.4, w: 1.3, leafH: 2.6, h: 3.25 };
-    const win = { x: 1.9, y: 1.05, scale: 0.6 };
-    const winHalf = ARCH.outer * win.scale;
-    const winTop = win.y + (ARCH.base + ARCH.springY + ARCH.outer) * win.scale;
+    const { renderer, scene } = createStoneScene(THREE, canvas, { size: 1024, box: { left: -4, right: 4, top: 5, bottom: -2 } });
+    const camera = new THREE.PerspectiveCamera(30, 1, 0.05, 100);
+    const built = createBuildingArch(THREE, renderer);
+    const arch = built.group;
+    scene.add(arch);
 
-    // Muro in corsi di blocchi sfalsati, lasciando liberi portone e finestra
-    const blocks = [];
-    const courses = Math.ceil(WALL_H / COURSE);
-    for (let r = 0; r < courses; r += 1) {
-        let x = -WALL_W / 2 - (r % 2 ? 0.35 : 0);
-        const cy = r * COURSE + COURSE / 2;
-        while (x < WALL_W / 2) {
-            const length = 0.7 + random() * 0.5;
-            const x0 = Math.max(x, -WALL_W / 2);
-            const x1 = Math.min(x + length, WALL_W / 2);
-            const cx = (x0 + x1) / 2;
-            const inDoor = Math.abs(cx - door.x) < door.w / 2 + 0.2 && cy < door.h + 0.2;
-            const inWindow = Math.abs(cx - win.x) < winHalf - 0.15 && cy > win.y && cy < winTop - 0.2;
-            if (x1 - x0 > 0.15 && !inDoor && !inWindow) {
-                blocks.push({ cx, cy, w: x1 - x0 - 0.025, h: COURSE - 0.025, d: DEPTH - random() * 0.05 });
-            }
-            x += length;
-        }
-    }
-    const wallMaterial = createStoneMaterial(THREE, stone, 0, anisotropy);
-    wallMaterial.color.set(0xffffff);
-    const wall = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), wallMaterial, blocks.length);
-    const matrix = new THREE.Matrix4();
-    const color = new THREE.Color();
-    blocks.forEach((block, i) => {
-        matrix.makeScale(block.w, block.h, block.d).setPosition(block.cx, block.cy, -block.d / 2);
-        wall.setMatrixAt(i, matrix);
-        wall.setColorAt(i, color.set(STONE_PALETTE[i % STONE_PALETTE.length]).lerp(new THREE.Color(0xe2d8c8), random() * 0.6));
-    });
-    wall.castShadow = true;
-    wall.receiveShadow = true;
-    scene.add(wall);
+    const { base, inner, openingHeight, photoZ } = ARCH;
+    const photoMaterial = new THREE.MeshBasicMaterial({ color: 0xf1e9dd, transparent: true, opacity: 0, toneMapped: false });
+    const photo = new THREE.Mesh(createOpeningGeometry(THREE, photoAspect), photoMaterial);
+    photo.position.set(0, base, photoZ);
+    arch.add(photo);
+    loadPhotoTexture(THREE, renderer, PHOTO, photoMaterial);
 
-    const addBox = (w, h, d, x, y, z, material) => {
-        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
-        mesh.position.set(x, y, z);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        scene.add(mesh);
-        return mesh;
-    };
-
-    // Cornice in pietra del portone, soglia e selciato
-    const frameMaterial = createStoneMaterial(THREE, stone, 3, anisotropy);
-    addBox(0.24, door.h + 0.24, 0.62, door.x - door.w / 2 - 0.12, (door.h + 0.24) / 2, -0.25, frameMaterial);
-    addBox(0.24, door.h + 0.24, 0.62, door.x + door.w / 2 + 0.12, (door.h + 0.24) / 2, -0.25, frameMaterial);
-    addBox(door.w + 0.48, 0.24, 0.62, door.x, door.h + 0.12, -0.25, frameMaterial);
-    addBox(door.w + 0.7, 0.08, 0.6, door.x, 0.04, 0.1, frameMaterial);
-    addBox(WALL_W + 1, 0.04, 2.2, 0, 0.02, 1.1, createStoneMaterial(THREE, stone, 4, anisotropy));
-
-    // Ante in legno (dalla foto del portone) e grata in ferro sopra
-    const woodMaterial = new THREE.MeshStandardMaterial({ color: 0x6b4423, roughness: 0.7 });
-    loadPhotoTexture(THREE, renderer, 'images/porta-anta.jpg', woodMaterial);
-    [-1, 1].forEach((side) => addBox(door.w / 2 - 0.012, door.leafH, 0.08, door.x + side * (door.w / 4), door.leafH / 2, -0.14, woodMaterial));
-    addBox(door.w, 0.06, 0.12, door.x, door.leafH + 0.03, -0.12, woodMaterial);
-
-    const grilleHeight = door.h - door.leafH - 0.06;
-    const grilleMaterial = new THREE.MeshStandardMaterial({ color: 0x8a8078, roughness: 0.6 });
-    loadPhotoTexture(THREE, renderer, 'images/porta-grata.jpg', grilleMaterial);
-    const grille = new THREE.Mesh(new THREE.PlaneGeometry(door.w, grilleHeight), grilleMaterial);
-    grille.position.set(door.x, door.leafH + 0.06 + grilleHeight / 2, -0.18);
-    scene.add(grille);
-
-    // La targa della Dimora accanto alla porta
-    const plaqueMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.45 });
-    loadPhotoTexture(THREE, renderer, 'images/targa.jpg', plaqueMaterial);
-    addBox(0.8, 0.59, 0.03, door.x + door.w / 2 + 0.75, 1.75, 0.015, plaqueMaterial);
-
-    // Finestra ad arco con la foto del soggiorno
-    const kit = createArchKit(THREE, renderer, true);
-    const windowArch = createStaticArch(THREE, kit, 1000 / 665);
-    windowArch.group.scale.setScalar(win.scale);
-    windowArch.group.position.set(win.x, win.y, 0.04);
-    scene.add(windowArch.group);
-    loadPhotoTexture(THREE, renderer, 'images/soggiorno.jpg', windowArch.photoMaterial);
-
-    const dust = createDust(THREE, 260, { x: [-5, 5], y: [0, 4.6], z: [-0.2, 2.5] });
+    const dust = createDust(THREE, 220, { x: [-3.5, 3.5], y: [0, 4.2], z: [-2.5, 0.5] });
     scene.add(dust.points);
 
-    // Dalla facciata intera ci si avvicina a portone e finestra
     const view = createStageView(THREE, sticky, renderer, camera);
+    const projectOpening = createOpeningProjector(THREE);
     const tilt = createPointerTilt(stage);
-    const target = new THREE.Vector3();
+    const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    const lookTarget = new THREE.Vector3();
+    let buildStart = null;
+    let lastTime = performance.now();
+
+    const render = (now) => {
+        const dt = Math.min((now - lastTime) / 1000, 0.05);
+        lastTime = now;
+        // La costruzione parte quando la scena entra davvero nello schermo
+        if (buildStart === null && sticky.getBoundingClientRect().top < window.innerHeight * 0.6) buildStart = now;
+        const t = buildStart === null ? 0 : (now - buildStart) / 1000;
+        built.update(t);
+        photoMaterial.opacity = clamp((t - 2.5) / 1, 0, 1);
+
+        // Prima tappa: arco accanto al testo; poi la camera entra e la foto riempie lo schermo
+        const position = steps.position();
+        const center = smoothstep(0.1, 0.45, position);
+        const fly = easeInOutSine(clamp((position - 0.15) / 0.75, 0, 1));
+        const fill = Math.min(inner / (tanHalf * camera.aspect), (openingHeight / 2) / tanHalf) * 0.82;
+
+        tilt.update();
+        arch.rotation.y = (-0.38 + Math.sin(t * 0.35) * 0.05 + tilt.x * 0.3) * (1 - center);
+        const photoCenterY = base + openingHeight / 2;
+        camera.position.set(0, lerp(2.05 - tilt.y * 0.3, photoCenterY, fly), lerp(view.dist * 1.05, photoZ + fill, fly));
+        lookTarget.set(0, lerp(1.45, photoCenterY, fly), lerp(0, photoZ, fly));
+        camera.lookAt(lookTarget);
+        camera.setViewOffset(view.w, view.h, -view.dx * (1 - center), -view.dy * (1 - center), view.w, view.h);
+        camera.updateProjectionMatrix();
+
+        steps.update(position);
+        dust.update(t, dt);
+        renderer.render(scene, camera);
+        applyArchReveal(reveal, projectOpening(arch, camera, view.w, view.h), view, photoAspect, smoothstep(0.3, 0.45, position));
+    };
+
+    runWhenVisible(renderer, stage, render);
+}
+
+/* ---------- Dove Siamo: arco con la foto del vicolo e l'indirizzo inciso sul basamento ---------- */
+async function initLocation3D() {
+    const box = document.getElementById('location-arch');
+    const canvas = document.getElementById('location-canvas');
+    if (!box || !canvas || !can3D()) return;
+
+    let THREE;
+    try {
+        THREE = await loadThree();
+        await Promise.all([
+            document.fonts?.load('500 64px "Cormorant Garamond"'),
+            document.fonts?.load('600 28px "Manrope"'),
+        ]);
+    } catch {
+        return;
+    }
+    if (!(await loadOfflineTextures())) return;
+    box.hidden = false;
+
+    const { renderer, scene, sun } = createStoneScene(THREE, canvas, { size: 1024, box: { left: -4, right: 4, top: 5, bottom: -2 } });
+    sun.position.set(-4, 7, 6);
+    const camera = new THREE.PerspectiveCamera(28, 1, 0.1, 100);
+    const kit = createArchKit(THREE, renderer, true);
+
+    // Basamento in pietra con l'indirizzo inciso sulla faccia anteriore
+    const PLINTH = { w: 3.6, h: 0.62, d: 1 };
+    const engraving = paintEngravedStone(1200, Math.round((1200 * PLINTH.h) / PLINTH.w), {
+        lines: [
+            { text: 'Corso Vittorio Emanuele II nr.12', font: '500 72px "Cormorant Garamond", serif', y: 0.46, maxWidth: 0.92 },
+            { text: '74015 Martina Franca', font: '600 34px "Manrope", sans-serif', y: 0.78 },
+        ],
+    });
+    const engravedTexture = new THREE.CanvasTexture(engraving);
+    engravedTexture.colorSpace = THREE.SRGBColorSpace;
+    engravedTexture.anisotropy = kit.anisotropy;
+    const sideMaterial = createStoneMaterial(THREE, kit.stone, 2, kit.anisotropy);
+    const frontMaterial = new THREE.MeshStandardMaterial({ map: engravedTexture, roughness: 0.92 });
+    const plinth = new THREE.Mesh(
+        new THREE.BoxGeometry(PLINTH.w, PLINTH.h, PLINTH.d),
+        [sideMaterial, sideMaterial, sideMaterial, sideMaterial, frontMaterial, sideMaterial],
+    );
+    plinth.position.y = PLINTH.h / 2;
+    plinth.castShadow = true;
+    plinth.receiveShadow = true;
+    scene.add(plinth);
+
+    // Arco con la foto del vicolo del centro storico
+    const arch = createStaticArch(THREE, kit, 1200 / 1600);
+    arch.group.position.y = PLINTH.h;
+    arch.group.scale.setScalar(1.05);
+    scene.add(arch.group);
+    loadPhotoTexture(THREE, renderer, 'images/galleria/immagine1.jpg', arch.photoMaterial);
+
+    const dust = createDust(THREE, 160, { x: [-3, 3], y: [0, 4.4], z: [-2, 1] });
+    scene.add(dust.points);
+
+    const view = { w: 1, h: 1, dist: 12 };
+    const resize = () => {
+        const w = box.clientWidth;
+        const h = box.clientHeight;
+        if (!w || !h) return;
+        const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+        Object.assign(view, { w, h, dist: Math.max(4.4 / 2 / tanHalf, 4 / 2 / (tanHalf * (w / h))) * 1.05 });
+        renderer.setSize(w, h, false);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+    };
+    new ResizeObserver(resize).observe(box);
+    resize();
+
+    const tilt = createPointerTilt(box);
+    const target = new THREE.Vector3(0, 2, 0);
     const start = performance.now();
     let lastTime = start;
 
@@ -1446,26 +1457,20 @@ async function initAbout3D() {
         const t = (now - start) / 1000;
         const dt = Math.min((now - lastTime) / 1000, 0.05);
         lastTime = now;
-
-        const position = steps.position();
+        const rect = box.getBoundingClientRect();
+        const p = clamp((window.innerHeight - rect.top) / (window.innerHeight + rect.height), 0, 1);
         tilt.update();
-        const distance = view.dist * lerp(10 / 3.4, 5.6 / 3.4, position);
-        const azimuth = lerp(-0.28, 0.14, position) + tilt.x * 0.18;
-        target.set(lerp(0, 0.3, position), lerp(2.3, 1.75, position), 0);
-        camera.position.set(target.x + Math.sin(azimuth) * distance, target.y + 0.35 - tilt.y * 0.3, Math.cos(azimuth) * distance);
+        const azimuth = lerp(-0.45, 0.3, p) + Math.sin(t * 0.3) * 0.04 + tilt.x * 0.3;
+        camera.position.set(Math.sin(azimuth) * view.dist, 2.3 - tilt.y * 0.4, Math.cos(azimuth) * view.dist);
         camera.lookAt(target);
-        camera.setViewOffset(view.w, view.h, -view.dx, -view.dy, view.w, view.h);
-        camera.updateProjectionMatrix();
-
-        steps.update(position);
         dust.update(t, dt);
         renderer.render(scene, camera);
     };
 
-    runWhenVisible(renderer, stage, render);
+    runWhenVisible(renderer, box, render);
 }
 
-/* ---------- Footer 3D: si esce dalla Dimora attraverso un arco che si costruisce ---------- */
+/* ---------- Footer 3D:/* ---------- Footer 3D: si esce dalla Dimora attraverso un arco che si costruisce ---------- */
 async function initFooter3D() {
     const footer = document.getElementById('site-footer');
     const stage = document.getElementById('footer-stage');
@@ -1491,14 +1496,16 @@ async function initFooter3D() {
 
     const view = { w: 1, h: 1, dist: 12 };
     const resize = () => {
-        const compact = stage.clientWidth < 700;
-        footer.classList.toggle('is-compact', compact);
         const w = canvas.clientWidth;
         const h = canvas.clientHeight;
         if (!w || !h) return;
         const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
         const aspect = w / h;
-        Object.assign(view, { w, h, dist: Math.max(3.5 / 2 / tanHalf / 0.76, 3.4 / 2 / (tanHalf * aspect) / 0.86) });
+        // Schermi stretti: il vano occupa quasi tutta la larghezza (i piedritti escono dai bordi) per contenere tutti i dati
+        const dist = w < 700
+            ? ARCH.inner / (tanHalf * aspect * 0.92)
+            : Math.max(3.5 / 2 / tanHalf / 0.76, 3.4 / 2 / (tanHalf * aspect) / 0.86);
+        Object.assign(view, { w, h, dist });
         renderer.setSize(w, h, false);
         camera.aspect = aspect;
         camera.updateProjectionMatrix();
@@ -1527,13 +1534,11 @@ async function initFooter3D() {
         renderer.render(scene, camera);
 
         // I dati del footer si dispongono nel vano dell'arco
-        if (!footer.classList.contains('is-compact')) {
-            const rect = projectOpening(built.group, camera, view.w, view.h);
-            content.style.setProperty('--fx', `${rect.left.toFixed(1)}px`);
-            content.style.setProperty('--fy', `${rect.top.toFixed(1)}px`);
-            content.style.setProperty('--fw', `${rect.width.toFixed(1)}px`);
-            content.style.setProperty('--fh', `${rect.height.toFixed(1)}px`);
-        }
+        const rect = projectOpening(built.group, camera, view.w, view.h);
+        content.style.setProperty('--fx', `${rect.left.toFixed(1)}px`);
+        content.style.setProperty('--fy', `${rect.top.toFixed(1)}px`);
+        content.style.setProperty('--fw', `${rect.width.toFixed(1)}px`);
+        content.style.setProperty('--fh', `${rect.height.toFixed(1)}px`);
         content.style.setProperty('--fo', smoothstep(2.2, 3.2, t).toFixed(3));
     };
 
@@ -1736,7 +1741,7 @@ function initReveal() {
     });
 }
 
-/* ---------- Effetti legati allo scroll: parole, lastra dell'indirizzo, portone (un solo ciclo) ---------- */
+/* ---------- Effetti legati allo scroll: parole e portone (un solo ciclo) ---------- */
 function initScrollEffects() {
     if (prefersReducedMotion) return;
 
@@ -1771,38 +1776,6 @@ function initScrollEffects() {
             const lit = Math.round(clamp((window.innerHeight * 0.85 - rect.top) / (window.innerHeight * 0.45), 0, 1) * words.length);
             words.forEach((word, i) => word.classList.toggle('is-lit', i < lit));
             return false;
-        });
-    });
-
-    // Lastra dell'indirizzo: ruota con lo scroll e segue il mouse
-    document.querySelectorAll('[data-lapide]').forEach((box) => {
-        const slab = box.querySelector('.lapide');
-        const pointer = { x: 0, y: 0 };
-        const state = { rx: 10, ry: -16 };
-        if (finePointer) {
-            box.addEventListener('pointermove', (event) => {
-                const rect = box.getBoundingClientRect();
-                pointer.x = (event.clientX - rect.left) / rect.width - 0.5;
-                pointer.y = (event.clientY - rect.top) / rect.height - 0.5;
-                request();
-            });
-            box.addEventListener('pointerleave', () => {
-                pointer.x = 0;
-                pointer.y = 0;
-                request();
-            });
-        }
-        effects.push(() => {
-            const rect = box.getBoundingClientRect();
-            if (!onScreen(rect)) return false;
-            const p = clamp((window.innerHeight - rect.top) / (window.innerHeight + rect.height), 0, 1);
-            const ry = lerp(-26, 14, p) + pointer.x * 16;
-            const rx = lerp(16, 4, p) - pointer.y * 10;
-            state.ry += (ry - state.ry) * 0.12;
-            state.rx += (rx - state.rx) * 0.12;
-            slab.style.setProperty('--ry', `${state.ry.toFixed(2)}deg`);
-            slab.style.setProperty('--rx', `${state.rx.toFixed(2)}deg`);
-            return Math.abs(ry - state.ry) > 0.05 || Math.abs(rx - state.rx) > 0.05;
         });
     });
 
@@ -2187,7 +2160,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initRooms3D();
     initServices3D();
     initAbout3D();
-    initLapide();
+    initLocation3D();
     initFooter3D();
     initMobileMenu();
     initSmoothScroll();
