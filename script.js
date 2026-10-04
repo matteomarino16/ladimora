@@ -518,16 +518,13 @@ function createDust(THREE, count, box) {
     return { points: new THREE.Points(geometry, material), material, update };
 }
 
-// Il rendering gira solo quando la scena è visibile e la scheda è attiva.
-// Le scene lontane dallo schermo liberano la memoria grafica e la riprendono quando ci si avvicina:
-// con molte scene 3D nella stessa pagina i telefoni non superano il limite di contesti WebGL.
+// Il rendering gira solo quando la scena è visibile e la scheda è attiva
 function runWhenVisible(renderer, target, render) {
     render(performance.now()); // primo fotogramma subito: scena e testi già in posizione
     let running = false;
     let inView = false;
-    let released = false;
     const sync = () => {
-        const value = inView && !document.hidden && !released;
+        const value = inView && !document.hidden;
         if (value === running) return;
         running = value;
         renderer.setAnimationLoop(value ? render : null);
@@ -536,16 +533,6 @@ function runWhenVisible(renderer, target, render) {
         inView = entry.isIntersecting;
         sync();
     }).observe(target);
-    new IntersectionObserver(([entry]) => {
-        if (entry.isIntersecting && released) {
-            released = false;
-            renderer.forceContextRestore();
-        } else if (!entry.isIntersecting && !released) {
-            released = true;
-            renderer.forceContextLoss();
-        }
-        sync();
-    }, { rootMargin: '150% 0px' }).observe(target);
     document.addEventListener('visibilitychange', sync);
 }
 
@@ -663,10 +650,10 @@ async function initHero3D() {
         camera.aspect = aspect;
     };
 
-    // Modalità volo: solo se la hero sta tutta nello schermo e la pagina è in cima
+    // Modalità volo: su mobile l'area dell'arco si adatta allo spazio, su desktop la hero deve stare nello schermo
     const enableFly = () => {
-        const fits = sticky.scrollHeight <= window.innerHeight + 2;
-        if (fits && window.scrollY < 60) hero.classList.add('is-fly');
+        const fits = window.innerWidth <= 900 || sticky.scrollHeight <= window.innerHeight + 2;
+        if (fits && window.scrollY < 150) hero.classList.add('is-fly');
     };
     enableFly();
     measure();
@@ -1316,7 +1303,7 @@ async function initAbout3D() {
         120,
     );
 
-    const PHOTO = 'images/galleria/foto5.jpg';
+    const PHOTO = 'images/galleria/foto12.jpg';
     const photoAspect = 1280 / 851;
     const revealImg = reveal.querySelector('img');
     if (revealImg?.dataset.src) revealImg.src = revealImg.dataset.src;
@@ -1741,7 +1728,7 @@ function initReveal() {
     });
 }
 
-/* ---------- Effetti legati allo scroll: parole e portone (un solo ciclo) ---------- */
+/* ---------- Parole che si illuminano con lo scroll ---------- */
 function initScrollEffects() {
     if (prefersReducedMotion) return;
 
@@ -1778,20 +1765,6 @@ function initScrollEffects() {
             return false;
         });
     });
-
-    // Portone: le ante si aprono quando il form sale sullo schermo
-    const doors = document.getElementById('doors');
-    if (doors) {
-        const card = doors.parentElement;
-        effects.push(() => {
-            const rect = card.getBoundingClientRect();
-            if (!onScreen(rect)) return false;
-            const open = smoothstep(0.08, 0.5, clamp((window.innerHeight - rect.top) / (window.innerHeight * 0.9), 0, 1));
-            doors.style.setProperty('--open', open.toFixed(3));
-            doors.classList.toggle('is-open', open > 0.995);
-            return false;
-        });
-    }
 
     window.addEventListener('scroll', request, { passive: true });
     window.addEventListener('resize', request);

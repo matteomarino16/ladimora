@@ -1425,60 +1425,6 @@ body.is-locked {
     background: var(--color-surface);
 }
 
-/* Portone della Dimora davanti al form: le ante si aprono con lo scroll (script.js aggiorna --open) */
-.doors {
-    display: none;
-}
-
-.js .doors {
-    position: absolute;
-    inset: 0;
-    z-index: 5;
-    display: flex;
-    perspective: 1800px;
-    pointer-events: none;
-}
-
-.js .doors.is-open {
-    visibility: hidden;
-}
-
-.door {
-    position: relative;
-    flex: 1;
-    background: #6b4423 url("images/porta-anta.jpg") left top / auto 100% repeat-x;
-    box-shadow: inset 0 0 0 1px rgba(40, 24, 12, 0.35), inset 0 0 60px rgba(40, 24, 12, 0.3);
-}
-
-.door-left {
-    transform-origin: left center;
-    transform: rotateY(calc(var(--open, 0) * -112deg));
-}
-
-.door-right {
-    transform-origin: right center;
-    transform: rotateY(calc(var(--open, 0) * 112deg));
-    background-position: right top;
-}
-
-.door-knob {
-    position: absolute;
-    top: 52%;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: radial-gradient(circle at 35% 35%, #f3d9a0, #a07a3a 60%, #5b4220);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.45);
-}
-
-.door-left .door-knob {
-    right: 12%;
-}
-
-.door-right .door-knob {
-    left: 12%;
-}
-
 .form-title {
     font-size: 2.2rem;
 }
@@ -1671,12 +1617,6 @@ body.is-locked {
     text-align: center;
 }
 
-.footer-logo {
-    width: 52px;
-    height: 52px;
-    color: var(--color-primary);
-}
-
 .footer-name {
     font-family: var(--font-serif);
     font-size: clamp(1.8rem, 3vw, 2.4rem);
@@ -1765,8 +1705,8 @@ body.is-locked {
     max-width: none;
     justify-content: center;
     gap: 0.5em;
-    padding: calc(var(--fw, 400px) * 0.3) 6% 5%;
-    font-size: clamp(0.64rem, calc(var(--fw, 400px) * 0.026), 0.86rem);
+    padding: calc(var(--fw, 400px) * 0.32) 7% 6%;
+    font-size: clamp(0.72rem, calc(var(--fw, 400px) * 0.032), 0.98rem);
     opacity: var(--fo, 0);
     background: radial-gradient(ellipse at 50% 70%, rgba(247, 239, 227, 0.92), rgba(228, 211, 186, 0) 75%);
 }
@@ -1775,28 +1715,28 @@ body.is-locked {
     font-size: 0.9em;
 }
 
-.site-footer.is-3d .footer-logo {
-    width: 2.8em;
-    height: 2.8em;
-}
-
 .site-footer.is-3d .footer-name {
     font-size: 2.3em;
 }
 
-.site-footer.is-3d .footer-social a {
-    width: 3.2em;
-    height: 3.2em;
+/* Sotto l'arco: social e note legali */
+.footer-bottom {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem 2rem;
+    padding-block: 1.5rem 0.5rem;
+    border-top: 1px solid var(--color-line);
+    font-size: 0.8rem;
+    color: var(--color-muted);
 }
 
 .footer-legal {
-    display: grid;
-    gap: 0.2em;
-    margin-top: 0.5em;
-    padding-top: 0.7em;
-    border-top: 1px solid var(--color-line);
-    font-size: 0.88em;
-    color: var(--color-muted);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 1.5rem;
 }
 
 .footer-link {
@@ -1834,8 +1774,26 @@ body.is-locked {
     background: var(--color-primary);
 }
 
-.quick-bar {
+.call-float {
+    position: fixed;
+    left: 1.5rem;
+    bottom: 1.5rem;
+    z-index: 90;
     display: none;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    color: var(--color-ivory);
+    font-size: 1.2rem;
+    box-shadow: 0 12px 26px -12px rgba(59, 42, 32, 0.6);
+    transition: background-color 0.3s var(--ease);
+}
+
+.call-float:hover {
+    background: var(--color-dark);
 }
 
 .cookie-banner {
@@ -2132,10 +2090,25 @@ body.is-locked {
         --glow-y: 30%;
     }
 
+    /* In modalità volo la hero riempie esattamente lo schermo: l'arco prende lo spazio che resta ai testi */
     .hero.is-fly .hero-sticky {
         display: flex;
         flex-direction: column;
-        justify-content: center;
+        padding-bottom: 1.5rem;
+    }
+
+    .hero.is-fly .hero-inner {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .hero.is-fly .hero-visual {
+        flex: 1 1 0;
+        height: auto;
+        min-height: 170px;
     }
 
     .hero-inner {
@@ -2182,10 +2155,6 @@ body.is-locked {
 }
 
 @media (max-width: 768px) {
-    body {
-        padding-bottom: 64px;
-    }
-
     .room {
         grid-template-columns: 1fr;
         gap: 2rem;
@@ -2246,7 +2215,7 @@ body.is-locked {
 
     .stage3d-dots {
         left: 50%;
-        bottom: calc(64px + 1.25rem);
+        bottom: 2.2rem;
         transform: translateX(-50%);
     }
 
@@ -2268,7 +2237,7 @@ body.is-locked {
     }
 
     .gallery.is-3d .gallery-hint {
-        bottom: calc(64px + 1.25rem);
+        bottom: 5.5rem;
         width: auto;
         letter-spacing: 0.12em;
     }
@@ -2276,6 +2245,17 @@ body.is-locked {
     .contact-item {
         grid-template-columns: 1fr;
         gap: 0.2rem;
+    }
+
+    .footer-bottom,
+    .footer-legal {
+        flex-direction: column;
+        justify-content: center;
+        text-align: center;
+    }
+
+    .footer-legal {
+        gap: 0.3rem;
     }
 
     .contact-label {
@@ -2291,51 +2271,25 @@ body.is-locked {
         grid-template-columns: 1fr;
     }
 
+    /* Pulsanti rotondi agli angoli: Chiama a sinistra, WhatsApp a destra */
+    .wa-float,
+    .call-float {
+        display: inline-flex;
+        bottom: calc(1rem + env(safe-area-inset-bottom));
+    }
+
     .wa-float {
-        display: none;
+        right: 1rem;
     }
 
-    .quick-bar {
-        position: fixed;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        z-index: 90;
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        padding-bottom: env(safe-area-inset-bottom);
-        background: rgba(238, 227, 210, 0.97);
-        border-top: 1px solid var(--color-line);
-    }
-
-    .quick-bar a {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 0.2rem;
-        min-height: 60px;
-        font-size: 0.64rem;
-        font-weight: 700;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-        text-decoration: none;
-        color: var(--color-text);
-    }
-
-    .quick-bar .icon {
-        font-size: 1.1rem;
-    }
-
-    .quick-bar .quick-primary {
-        background: var(--color-dark);
-        color: var(--color-ivory);
+    .call-float {
+        left: 1rem;
     }
 
     .cookie-banner {
         left: 0.75rem;
         right: 0.75rem;
-        bottom: calc(64px + 0.75rem + env(safe-area-inset-bottom));
+        bottom: calc(4.75rem + env(safe-area-inset-bottom));
         max-width: none;
         padding: 1rem 1.1rem;
         font-size: 0.8rem;
@@ -2466,9 +2420,5 @@ body.is-locked {
     .js [data-reveal] {
         opacity: 1;
         transform: none;
-    }
-
-    .js .doors {
-        display: none;
     }
 }
