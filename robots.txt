@@ -1,0 +1,22 @@
+# La Dimora di Nonna Dora - casa vacanza a Martina Franca
+User-agent: *
+Allow: /
+Disallow: /images/textures-offline.js
+
+# Motori di ricerca e assistenti AI: accesso consentito
+User-agent: Googlebot
+User-agent: Google-Extended
+User-agent: Bingbot
+User-agent: GPTBot
+User-agent: OAI-SearchBot
+User-agent: ChatGPT-User
+User-agent: ClaudeBot
+User-agent: Claude-SearchBot
+User-agent: Claude-User
+User-agent: PerplexityBot
+User-agent: Applebot
+User-agent: Applebot-Extended
+Allow: /
+Disallow: /images/textures-offline.js
+
+Sitemap: https://www.ladimoradinonnadora.com/sitemap.xml

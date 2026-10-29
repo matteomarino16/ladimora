@@ -189,7 +189,7 @@ function createRecessTexture(THREE) {
     return texture;
 }
 
-/* ---------- Elementi 3D condivisi: hero, portico delle camere, corridoio della galleria ---------- */
+/* ---------- Elementi 3D condivisi tra hero e footer ---------- */
 const ARCH = { inner: 1, outer: 1.42, depth: 0.62, base: 0.07, springY: 1.55, gap: 0.024 };
 ARCH.openingHeight = ARCH.springY + ARCH.inner;
 ARCH.photoZ = -ARCH.depth * 0.2;
@@ -372,46 +372,6 @@ function loadPhotoTexture(THREE, renderer, url, material) {
         material.color.set(0xffffff);
         material.needsUpdate = true;
     });
-}
-
-// Materiali e geometrie condivise da tutti gli archi di una scena
-function createArchKit(THREE, renderer, castShadow) {
-    return {
-        specs: createArchBlocks(THREE),
-        stone: createStoneTextures(THREE),
-        anisotropy: renderer.capabilities.getMaxAnisotropy(),
-        recessGeometry: createOpeningGeometry(THREE, null),
-        recessMaterial: new THREE.MeshBasicMaterial({
-            map: createRecessTexture(THREE),
-            transparent: true,
-            depthWrite: false,
-            toneMapped: false,
-        }),
-        castShadow,
-        count: 0,
-    };
-}
-
-// Arco già costruito, con foto nel vano
-function createStaticArch(THREE, kit, photoAspect) {
-    const group = new THREE.Group();
-    kit.specs.forEach((spec) => {
-        const mesh = new THREE.Mesh(spec.geometry, createStoneMaterial(THREE, kit.stone, kit.count, kit.anisotropy));
-        kit.count += 1;
-        mesh.position.copy(spec.position);
-        mesh.castShadow = kit.castShadow;
-        mesh.receiveShadow = kit.castShadow;
-        group.add(mesh);
-    });
-
-    const photoMaterial = new THREE.MeshBasicMaterial({ color: 0xf1e9dd, toneMapped: false });
-    const photo = new THREE.Mesh(createOpeningGeometry(THREE, photoAspect), photoMaterial);
-    photo.position.set(0, ARCH.base, ARCH.photoZ);
-    const recess = new THREE.Mesh(kit.recessGeometry, kit.recessMaterial);
-    recess.position.set(0, ARCH.base, ARCH.photoZ + 0.003);
-    recess.renderOrder = 1;
-    group.add(photo, recess);
-    return { group, photo, photoMaterial };
 }
 
 // Arco che si costruisce blocco per blocco (hero e footer): update(t) con t in secondi dall'inizio
@@ -758,68 +718,7 @@ async function initHero3D() {
     runWhenVisible(renderer, hero, render);
 }
 
-/* ---------- Scene 3D "a tappe": portico delle camere ed esedra dei servizi ---------- */
-// Testi e indicatori: copie dei contenuti della versione di riserva, in dissolvenza tappa per tappa
-function createStageSteps(stage, panel, dotsBox, sources, stepHeight) {
-    const cards = sources.map((source) => {
-        const card = source.cloneNode(true);
-        card.removeAttribute('data-reveal');
-        card.className = 'stage-card';
-        panel.append(card);
-        return card;
-    });
-    const dots = sources.map(() => dotsBox.appendChild(document.createElement('span')));
-    const count = sources.length;
-    stage.style.setProperty('--stage-h', `${count * stepHeight + 40}vh`);
-
-    const focus = (i, position) => 1 - Math.min(Math.abs(position - i) * 2.2, 1);
-    return {
-        focus,
-        // Posizione lungo le tappe, con una pausa su ciascuna
-        position() {
-            const s = pinProgress(stage) * (count - 1);
-            const index = Math.min(Math.floor(s), count - 2);
-            return index + smoothstep(0.2, 0.8, s - index);
-        },
-        update(position) {
-            cards.forEach((card, i) => {
-                const f = focus(i, position);
-                card.style.opacity = f.toFixed(3);
-                card.style.translate = `0 ${((i - position) * 48).toFixed(1)}px`;
-                card.style.visibility = f < 0.02 ? 'hidden' : '';
-                dots[i].classList.toggle('is-active', Math.round(position) === i);
-            });
-        },
-    };
-}
-
-// Inquadratura: l'arco attivo occupa la parte destra (desktop) o alta (mobile) dello schermo
-function createStageView(THREE, sticky, renderer, camera) {
-    const view = { w: 1, h: 1, dx: 0, dy: 0, dist: 10 };
-    const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
-    const measure = () => {
-        const w = sticky.clientWidth;
-        const h = sticky.clientHeight;
-        if (!w || !h) return;
-        const focus = w > 900
-            ? { x: w * 0.62, y: h * 0.57, w: w * 0.46, h: h * 0.64 }
-            : { x: w / 2, y: h * 0.34, w: w * 0.9, h: h * 0.44 };
-        const aspect = w / h;
-        Object.assign(view, {
-            w,
-            h,
-            dx: focus.x - w / 2,
-            dy: focus.y - h / 2,
-            dist: Math.max((3.4 / 2 / tanHalf) * (h / focus.h), (3.4 / 2 / (tanHalf * aspect)) * (w / focus.w)),
-        });
-        renderer.setSize(w, h, false);
-        camera.aspect = aspect;
-    };
-    new ResizeObserver(measure).observe(sticky);
-    measure();
-    return view;
-}
-
+/* ---------- Parallasse leggera col mouse (footer) ---------- */
 // Leggera parallasse che segue il mouse
 function createPointerTilt(target) {
     const pointer = { x: 0, y: 0 };
@@ -840,624 +739,7 @@ function createPointerTilt(target) {
     return tilt;
 }
 
-/* ---------- Portico 3D delle camere: tre archi percorsi con lo scroll ---------- */
-async function initRooms3D() {
-    const section = document.getElementById('rooms');
-    const stage = document.getElementById('rooms-stage');
-    const sticky = stage?.querySelector('.stage3d-sticky');
-    const canvas = document.getElementById('rooms-canvas');
-    const list = document.getElementById('room-list');
-    if (!section || !stage || !canvas || !list || !can3D()) return;
-
-    let THREE;
-    try {
-        THREE = await loadThree();
-    } catch {
-        return;
-    }
-    if (!(await loadOfflineTextures())) return;
-    // Se la sezione è già sullo schermo non si cambia l'impaginazione sotto gli occhi dell'utente
-    if (section.getBoundingClientRect().top < window.innerHeight) return;
-
-    const rooms = [...list.querySelectorAll('.room')];
-    section.classList.add('is-3d');
-    stage.hidden = false;
-    const steps = createStageSteps(
-        stage,
-        document.getElementById('rooms-panel'),
-        document.getElementById('rooms-dots'),
-        rooms.map((room) => room.querySelector('.room-content')),
-        95,
-    );
-
-    const SPACING = 3.9;
-    const center = ((rooms.length - 1) * SPACING) / 2;
-    const { renderer, scene, sun } = createStoneScene(THREE, canvas, {
-        size: 2048,
-        box: { left: -(center + 5), right: center + 5, top: 6, bottom: -3 },
-    });
-    sun.position.set(center - 4, 7, 6);
-    sun.target.position.set(center, 0, 0);
-
-    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
-    const kit = createArchKit(THREE, renderer, true);
-
-    // Basamento continuo del portico
-    const plinth = new THREE.Mesh(
-        new THREE.BoxGeometry(center * 2 + 5, 0.06, 1.5),
-        createStoneMaterial(THREE, kit.stone, 2, kit.anisotropy),
-    );
-    plinth.position.set(center, 0.03, 0);
-    plinth.receiveShadow = true;
-    scene.add(plinth);
-
-    const arches = rooms.map((room, index) => {
-        const img = room.querySelector('img');
-        const aspect = Number(img.getAttribute('width')) / Number(img.getAttribute('height')) || 1.5;
-        const arch = createStaticArch(THREE, kit, aspect);
-        arch.group.position.set(index * SPACING, 0.06, 0);
-        scene.add(arch.group);
-        loadPhotoTexture(THREE, renderer, img.getAttribute('src'), arch.photoMaterial);
-        return arch;
-    });
-
-    const dust = createDust(THREE, 320, { x: [-3, center * 2 + 3], y: [0, 4.2], z: [-2, 1.5] });
-    scene.add(dust.points);
-
-    const view = createStageView(THREE, sticky, renderer, camera);
-    const tilt = createPointerTilt(stage);
-    const dim = new THREE.Color(0xcfc6b9);
-    const white = new THREE.Color(0xffffff);
-    const lookTarget = new THREE.Vector3();
-    const start = performance.now();
-    let lastTime = start;
-
-    const render = (now) => {
-        const t = (now - start) / 1000;
-        const dt = Math.min((now - lastTime) / 1000, 0.05);
-        lastTime = now;
-
-        const position = steps.position();
-        const camX = position * SPACING;
-        tilt.update();
-        camera.position.set(camX - 2.1 + tilt.x * 0.8, 2.05 - tilt.y * 0.3, view.dist);
-        lookTarget.set(camX, 1.45, 0);
-        camera.lookAt(lookTarget);
-        camera.setViewOffset(view.w, view.h, -view.dx, -view.dy, view.w, view.h);
-        camera.updateProjectionMatrix();
-
-        arches.forEach((arch, i) => {
-            arch.photoMaterial.color.copy(dim).lerp(white, steps.focus(i, position));
-        });
-        steps.update(position);
-
-        dust.update(t, dt);
-        renderer.render(scene, camera);
-    };
-
-    runWhenVisible(renderer, stage, render);
-}
-
-/* ---------- Esedra 3D dei servizi: sei archi con icona e nome incisi nella pietra ---------- */
-// Converte i simboli SVG delle icone in tracciati disegnabili su canvas
-function symbolToPaths(symbol) {
-    return [...symbol.children].map((el) => {
-        const n = (name) => Number(el.getAttribute(name) || 0);
-        const path = new Path2D();
-        switch (el.tagName.toLowerCase()) {
-            case 'path':
-                return new Path2D(el.getAttribute('d'));
-            case 'rect':
-                path.roundRect(n('x'), n('y'), n('width'), n('height'), n('rx'));
-                return path;
-            case 'circle':
-                path.arc(n('cx'), n('cy'), n('r'), 0, Math.PI * 2);
-                return path;
-            default:
-                return null;
-        }
-    }).filter(Boolean);
-}
-
-// Pietra incisa su canvas: icona e righe di testo con luce sotto il bordo e ombra nel solco
-function paintEngravedStone(width, height, { symbol = null, iconY = 0.4, iconScale = 6.4, frame = false, lines = [] }) {
-    const c = document.createElement('canvas');
-    c.width = width;
-    c.height = height;
-    const ctx = c.getContext('2d');
-    ctx.drawImage(paintStoneCanvases().colorCanvas, 0, 0, width, height);
-    ctx.fillStyle = 'rgba(244, 238, 228, 0.45)';
-    ctx.fillRect(0, 0, width, height);
-
-    const engrave = (draw) => {
-        ctx.save();
-        ctx.translate(2, 2);
-        draw('rgba(255, 255, 255, 0.8)');
-        ctx.restore();
-        draw('rgba(112, 88, 60, 0.92)');
-    };
-
-    if (frame) {
-        const inset = width * 0.045;
-        engrave((color) => {
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 2.5;
-            ctx.strokeRect(inset, inset, width - inset * 2, height - inset * 2);
-        });
-    }
-
-    if (symbol) {
-        const paths = symbolToPaths(symbol);
-        engrave((color) => {
-            ctx.save();
-            ctx.translate(width / 2 - 12 * iconScale, height * iconY - 12 * iconScale);
-            ctx.scale(iconScale, iconScale);
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 1.25;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            paths.forEach((path) => ctx.stroke(path));
-            ctx.restore();
-        });
-    }
-
-    lines.forEach(({ text, font, y, lineHeight = 1.1, maxWidth = 0.78 }) => {
-        ctx.font = font;
-        ctx.textAlign = 'center';
-        const size = parseFloat(font.match(/(\d+)px/)[1]);
-        const rows = [];
-        text.split(' ').forEach((word) => {
-            const last = rows[rows.length - 1];
-            if (last && ctx.measureText(`${last} ${word}`).width < width * maxWidth) rows[rows.length - 1] = `${last} ${word}`;
-            else rows.push(word);
-        });
-        engrave((color) => {
-            ctx.fillStyle = color;
-            rows.forEach((row, i) => ctx.fillText(row, width / 2, height * y + i * size * lineHeight));
-        });
-    });
-    return c;
-}
-
-// Lastra di calcare con icona e nome del servizio incisi
-function createServiceTablet(THREE, service, anisotropy) {
-    const w = 512;
-    const h = Math.round(w / ((ARCH.inner * 2) / ARCH.openingHeight));
-    const canvas = paintEngravedStone(w, h, {
-        symbol: document.querySelector(service.querySelector('use')?.getAttribute('href') || ''),
-        lines: [{ text: service.querySelector('.service-title')?.textContent.trim() || '', font: '500 46px "Cormorant Garamond", serif', y: 0.66 }],
-    });
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = anisotropy;
-    return texture;
-}
-
-async function initServices3D() {
-    const section = document.querySelector('.services');
-    const stage = document.getElementById('services-stage');
-    const sticky = stage?.querySelector('.stage3d-sticky');
-    const canvas = document.getElementById('services-canvas');
-    const list = document.getElementById('services-list');
-    if (!section || !stage || !canvas || !list || !can3D()) return;
-
-    let THREE;
-    try {
-        THREE = await loadThree();
-        await document.fonts?.load('500 46px "Cormorant Garamond"');
-    } catch {
-        return;
-    }
-    if (section.getBoundingClientRect().top < window.innerHeight) return;
-
-    const services = [...list.querySelectorAll('.service')];
-    section.classList.add('is-3d');
-    stage.hidden = false;
-    const steps = createStageSteps(stage, document.getElementById('services-panel'), document.getElementById('services-dots'), services, 60);
-
-    const RADIUS = 6.6;
-    const STEP = 0.5;
-    const angleAt = (position) => (position - (services.length - 1) / 2) * STEP;
-
-    const { renderer, scene, sun } = createStoneScene(THREE, canvas, { size: 2048, box: { left: -9, right: 9, top: 9, bottom: -9 } });
-    // Sole alle spalle di chi guarda: illumina tutte le facciate rivolte verso il centro
-    sun.position.set(-2, 9, 5);
-    sun.target.position.set(0, 0, -RADIUS);
-    const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 100);
-    const kit = createArchKit(THREE, renderer, true);
-
-    // Basamento circolare dell'esedra
-    const floor = new THREE.Mesh(
-        new THREE.CylinderGeometry(RADIUS + 1, RADIUS + 1, 0.05, 72),
-        createStoneMaterial(THREE, kit.stone, 1, kit.anisotropy),
-    );
-    floor.position.y = 0.025;
-    floor.receiveShadow = true;
-    scene.add(floor);
-
-    const openingAspect = (ARCH.inner * 2) / ARCH.openingHeight;
-    const arches = services.map((service, i) => {
-        const a = angleAt(i);
-        const arch = createStaticArch(THREE, kit, openingAspect);
-        arch.group.position.set(Math.sin(a) * RADIUS, 0.05, -Math.cos(a) * RADIUS);
-        arch.group.rotation.y = -a;
-        arch.photoMaterial.map = createServiceTablet(THREE, service, kit.anisotropy);
-        arch.photoMaterial.color.set(0xffffff);
-        arch.photoMaterial.needsUpdate = true;
-        scene.add(arch.group);
-        return arch;
-    });
-
-    const dust = createDust(THREE, 320, { x: [-6, 6], y: [0, 4.2], z: [-RADIUS - 1, 2] });
-    scene.add(dust.points);
-
-    const view = createStageView(THREE, sticky, renderer, camera);
-    const tilt = createPointerTilt(stage);
-    const dim = new THREE.Color(0xd9d0c3);
-    const white = new THREE.Color(0xffffff);
-    const lookTarget = new THREE.Vector3();
-    const start = performance.now();
-    let lastTime = start;
-
-    const render = (now) => {
-        const t = (now - start) / 1000;
-        const dt = Math.min((now - lastTime) / 1000, 0.05);
-        lastTime = now;
-
-        // Lo sguardo ruota dal centro dell'esedra verso l'arco attivo
-        const position = steps.position();
-        tilt.update();
-        const a = angleAt(position) + tilt.x * 0.08;
-        const reach = RADIUS - view.dist;
-        camera.position.set(Math.sin(a) * reach, 1.95 - tilt.y * 0.3, -Math.cos(a) * reach);
-        lookTarget.set(Math.sin(a) * RADIUS, 1.45, -Math.cos(a) * RADIUS);
-        camera.lookAt(lookTarget);
-        camera.setViewOffset(view.w, view.h, -view.dx, -view.dy, view.w, view.h);
-        camera.updateProjectionMatrix();
-
-        arches.forEach((arch, i) => {
-            arch.photoMaterial.color.copy(dim).lerp(white, steps.focus(i, position));
-        });
-        steps.update(position);
-
-        dust.update(t, dt);
-        renderer.render(scene, camera);
-    };
-
-    runWhenVisible(renderer, stage, render);
-}
-
-/* ---------- Galleria 3D: corridoio di archi con le foto, percorso con lo scroll ---------- */
-async function initGallery3D(items, openAt) {
-    const section = document.getElementById('gallery');
-    const pin = document.getElementById('gallery-pin');
-    const canvas = document.getElementById('gallery-canvas');
-    const bar = document.getElementById('gallery-progress-bar');
-    const hint = document.getElementById('gallery-hint');
-    if (!section || !pin || !canvas || !items.length || !can3D()) return false;
-
-    let THREE;
-    try {
-        THREE = await loadThree();
-    } catch {
-        return false;
-    }
-    if (!(await loadOfflineTextures())) return false;
-    if (section.getBoundingClientRect().top < window.innerHeight) return false;
-
-    const count = Math.min(10, items.length);
-    const GAP = 3.3;
-    const { renderer, scene } = createStoneScene(THREE, canvas, null);
-    scene.fog = new THREE.Fog(0xeee3d2, 7, 24);
-    const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 60);
-    const kit = createArchKit(THREE, renderer, false);
-
-    // Ombra morbida sotto ogni arco (più leggera delle ombre in tempo reale)
-    const blobCanvas = document.createElement('canvas');
-    blobCanvas.width = 128;
-    blobCanvas.height = 64;
-    const blobCtx = blobCanvas.getContext('2d');
-    const blobGradient = blobCtx.createRadialGradient(64, 32, 0, 64, 32, 64);
-    blobGradient.addColorStop(0, 'rgba(74,56,40,0.35)');
-    blobGradient.addColorStop(1, 'rgba(74,56,40,0)');
-    blobCtx.fillStyle = blobGradient;
-    blobCtx.fillRect(0, 0, 128, 64);
-    const blobMaterial = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(blobCanvas), transparent: true, depthWrite: false });
-    const blobGeometry = new THREE.PlaneGeometry(4.6, 2.2);
-
-    const photos = [];
-    const blobs = [];
-    for (let i = 0; i < count; i += 1) {
-        const arch = createStaticArch(THREE, kit, items[i].aspect || 1.5);
-        scene.add(arch.group);
-        loadPhotoTexture(THREE, renderer, items[i].src, arch.photoMaterial);
-        arch.photo.userData.index = i;
-        photos.push(arch);
-
-        const blob = new THREE.Mesh(blobGeometry, blobMaterial);
-        blob.rotation.x = -Math.PI / 2;
-        scene.add(blob);
-        blobs.push(blob);
-    }
-
-    // Disposizione a zig-zag; sugli schermi verticali archi più piccoli e più rivolti verso chi guarda
-    const layout = { scale: 1, eye: 1.55 };
-    const arrange = (narrow) => {
-        layout.scale = narrow ? 0.72 : 1;
-        layout.eye = narrow ? 1.15 : 1.55;
-        photos.forEach((arch, i) => {
-            const side = i % 2 === 0 ? -1 : 1;
-            const x = side * (narrow ? 1.3 : 1.75);
-            arch.group.position.set(x, 0, -i * GAP);
-            arch.group.rotation.y = -side * (narrow ? 0.55 : 0.42);
-            arch.group.scale.setScalar(layout.scale);
-            blobs[i].position.set(x + 0.6 * layout.scale, 0.002, -i * GAP + 0.4);
-            blobs[i].scale.setScalar(layout.scale);
-        });
-    };
-
-    const zStart = 9;
-    const zEnd = -(count - 1) * GAP + 3.2;
-    const dust = createDust(THREE, 420, { x: [-4, 4], y: [0, 4], z: [zEnd - 6, zStart] });
-    scene.add(dust.points);
-
-    section.classList.add('is-3d');
-    pin.style.setProperty('--pin-h', `${count * 42 + 100}vh`);
-
-    const resize = () => {
-        const w = canvas.clientWidth;
-        const h = canvas.clientHeight;
-        if (!w || !h) return;
-        renderer.setSize(w, h, false);
-        camera.aspect = w / h;
-        camera.fov = camera.aspect < 1 ? 66 : 40;
-        camera.updateProjectionMatrix();
-        arrange(camera.aspect < 1);
-    };
-    new ResizeObserver(resize).observe(canvas);
-    resize();
-
-    // Clic / tocco su un arco: apre la foto nel lightbox
-    const raycaster = new THREE.Raycaster();
-    const ndc = new THREE.Vector2();
-    const photoMeshes = photos.map((arch) => arch.photo);
-    let hovered = -1;
-    const pick = (event) => {
-        const rect = canvas.getBoundingClientRect();
-        ndc.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
-        raycaster.setFromCamera(ndc, camera);
-        const hit = raycaster.intersectObjects(photoMeshes)[0];
-        return hit ? hit.object.userData.index : -1;
-    };
-    canvas.addEventListener('click', (event) => {
-        const index = pick(event);
-        if (index >= 0) openAt(index, document.getElementById('gallery-more'));
-    });
-    if (finePointer) {
-        canvas.addEventListener('pointermove', (event) => {
-            hovered = pick(event);
-            canvas.style.cursor = hovered >= 0 ? 'zoom-in' : '';
-        });
-        canvas.addEventListener('pointerleave', () => { hovered = -1; });
-    }
-
-    const lookTarget = new THREE.Vector3();
-    const highlight = new THREE.Color(0xffffff);
-    const rest = new THREE.Color(0xeee8df);
-    const start = performance.now();
-    let lastTime = start;
-
-    const render = (now) => {
-        const t = (now - start) / 1000;
-        const dt = Math.min((now - lastTime) / 1000, 0.05);
-        lastTime = now;
-
-        const p = pinProgress(pin);
-        const z = lerp(zStart, zEnd, easeInOutSine(p));
-        const sway = Math.sin(p * Math.PI * (count / 2)) * 0.35;
-        camera.position.set(sway * layout.scale, layout.eye + Math.sin(t * 0.6) * 0.03, z);
-        lookTarget.set(sway * 0.4 * layout.scale, layout.eye - 0.15, z - 6);
-        camera.lookAt(lookTarget);
-
-        photos.forEach((arch, i) => {
-            arch.photoMaterial.color.copy(i === hovered ? highlight : rest);
-            if (!arch.photoMaterial.map) arch.photoMaterial.color.set(0xf1e9dd);
-        });
-
-        bar.style.setProperty('--progress', p.toFixed(3));
-        hint.style.opacity = String(1 - smoothstep(0.02, 0.1, p));
-        dust.update(t, dt);
-        renderer.render(scene, camera);
-    };
-
-    runWhenVisible(renderer, pin, render);
-    return true;
-}
-
-/* ---------- Chi Siamo come la hero: l'arco si costruisce, poi la camera entra e la foto si apre ---------- */
-async function initAbout3D() {
-    const section = document.getElementById('about');
-    const stage = document.getElementById('about-stage');
-    const sticky = stage?.querySelector('.stage3d-sticky');
-    const canvas = document.getElementById('about-canvas');
-    const reveal = document.getElementById('about-reveal');
-    const fallback = document.getElementById('about-fallback');
-    if (!section || !stage || !canvas || !reveal || !fallback || !can3D()) return;
-
-    let THREE;
-    try {
-        THREE = await loadThree();
-    } catch {
-        return;
-    }
-    if (!(await loadOfflineTextures())) return;
-    if (section.getBoundingClientRect().top < window.innerHeight) return;
-
-    section.classList.add('is-3d');
-    stage.hidden = false;
-    const steps = createStageSteps(
-        stage,
-        document.getElementById('about-panel'),
-        document.getElementById('about-dots'),
-        [...fallback.querySelectorAll('.about-step')],
-        120,
-    );
-
-    const PHOTO = 'images/galleria/foto12.jpg';
-    const photoAspect = 1280 / 851;
-    const revealImg = reveal.querySelector('img');
-    if (revealImg?.dataset.src) revealImg.src = revealImg.dataset.src;
-
-    const { renderer, scene } = createStoneScene(THREE, canvas, { size: 1024, box: { left: -4, right: 4, top: 5, bottom: -2 } });
-    const camera = new THREE.PerspectiveCamera(30, 1, 0.05, 100);
-    const built = createBuildingArch(THREE, renderer);
-    const arch = built.group;
-    scene.add(arch);
-
-    const { base, inner, openingHeight, photoZ } = ARCH;
-    const photoMaterial = new THREE.MeshBasicMaterial({ color: 0xf1e9dd, transparent: true, opacity: 0, toneMapped: false });
-    const photo = new THREE.Mesh(createOpeningGeometry(THREE, photoAspect), photoMaterial);
-    photo.position.set(0, base, photoZ);
-    arch.add(photo);
-    loadPhotoTexture(THREE, renderer, PHOTO, photoMaterial);
-
-    const dust = createDust(THREE, 220, { x: [-3.5, 3.5], y: [0, 4.2], z: [-2.5, 0.5] });
-    scene.add(dust.points);
-
-    const view = createStageView(THREE, sticky, renderer, camera);
-    const projectOpening = createOpeningProjector(THREE);
-    const tilt = createPointerTilt(stage);
-    const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
-    const lookTarget = new THREE.Vector3();
-    let buildStart = null;
-    let lastTime = performance.now();
-
-    const render = (now) => {
-        const dt = Math.min((now - lastTime) / 1000, 0.05);
-        lastTime = now;
-        // La costruzione parte quando la scena entra davvero nello schermo
-        if (buildStart === null && sticky.getBoundingClientRect().top < window.innerHeight * 0.6) buildStart = now;
-        const t = buildStart === null ? 0 : (now - buildStart) / 1000;
-        built.update(t);
-        photoMaterial.opacity = clamp((t - 2.5) / 1, 0, 1);
-
-        // Prima tappa: arco accanto al testo; poi la camera entra e la foto riempie lo schermo
-        const position = steps.position();
-        const center = smoothstep(0.1, 0.45, position);
-        const fly = easeInOutSine(clamp((position - 0.15) / 0.75, 0, 1));
-        const fill = Math.min(inner / (tanHalf * camera.aspect), (openingHeight / 2) / tanHalf) * 0.82;
-
-        tilt.update();
-        arch.rotation.y = (-0.38 + Math.sin(t * 0.35) * 0.05 + tilt.x * 0.3) * (1 - center);
-        const photoCenterY = base + openingHeight / 2;
-        camera.position.set(0, lerp(2.05 - tilt.y * 0.3, photoCenterY, fly), lerp(view.dist * 1.05, photoZ + fill, fly));
-        lookTarget.set(0, lerp(1.45, photoCenterY, fly), lerp(0, photoZ, fly));
-        camera.lookAt(lookTarget);
-        camera.setViewOffset(view.w, view.h, -view.dx * (1 - center), -view.dy * (1 - center), view.w, view.h);
-        camera.updateProjectionMatrix();
-
-        steps.update(position);
-        dust.update(t, dt);
-        renderer.render(scene, camera);
-        applyArchReveal(reveal, projectOpening(arch, camera, view.w, view.h), view, photoAspect, smoothstep(0.3, 0.45, position));
-    };
-
-    runWhenVisible(renderer, stage, render);
-}
-
-/* ---------- Dove Siamo: arco con la foto del vicolo e l'indirizzo inciso sul basamento ---------- */
-async function initLocation3D() {
-    const box = document.getElementById('location-arch');
-    const canvas = document.getElementById('location-canvas');
-    if (!box || !canvas || !can3D()) return;
-
-    let THREE;
-    try {
-        THREE = await loadThree();
-        await Promise.all([
-            document.fonts?.load('500 64px "Cormorant Garamond"'),
-            document.fonts?.load('600 28px "Manrope"'),
-        ]);
-    } catch {
-        return;
-    }
-    if (!(await loadOfflineTextures())) return;
-    box.hidden = false;
-
-    const { renderer, scene, sun } = createStoneScene(THREE, canvas, { size: 1024, box: { left: -4, right: 4, top: 5, bottom: -2 } });
-    sun.position.set(-4, 7, 6);
-    const camera = new THREE.PerspectiveCamera(28, 1, 0.1, 100);
-    const kit = createArchKit(THREE, renderer, true);
-
-    // Basamento in pietra con l'indirizzo inciso sulla faccia anteriore
-    const PLINTH = { w: 3.6, h: 0.62, d: 1 };
-    const engraving = paintEngravedStone(1200, Math.round((1200 * PLINTH.h) / PLINTH.w), {
-        lines: [
-            { text: 'Corso Vittorio Emanuele II nr.12', font: '500 72px "Cormorant Garamond", serif', y: 0.46, maxWidth: 0.92 },
-            { text: '74015 Martina Franca', font: '600 34px "Manrope", sans-serif', y: 0.78 },
-        ],
-    });
-    const engravedTexture = new THREE.CanvasTexture(engraving);
-    engravedTexture.colorSpace = THREE.SRGBColorSpace;
-    engravedTexture.anisotropy = kit.anisotropy;
-    const sideMaterial = createStoneMaterial(THREE, kit.stone, 2, kit.anisotropy);
-    const frontMaterial = new THREE.MeshStandardMaterial({ map: engravedTexture, roughness: 0.92 });
-    const plinth = new THREE.Mesh(
-        new THREE.BoxGeometry(PLINTH.w, PLINTH.h, PLINTH.d),
-        [sideMaterial, sideMaterial, sideMaterial, sideMaterial, frontMaterial, sideMaterial],
-    );
-    plinth.position.y = PLINTH.h / 2;
-    plinth.castShadow = true;
-    plinth.receiveShadow = true;
-    scene.add(plinth);
-
-    // Arco con la foto del vicolo del centro storico
-    const arch = createStaticArch(THREE, kit, 1200 / 1600);
-    arch.group.position.y = PLINTH.h;
-    arch.group.scale.setScalar(1.05);
-    scene.add(arch.group);
-    loadPhotoTexture(THREE, renderer, 'images/galleria/immagine1.jpg', arch.photoMaterial);
-
-    const dust = createDust(THREE, 160, { x: [-3, 3], y: [0, 4.4], z: [-2, 1] });
-    scene.add(dust.points);
-
-    const view = { w: 1, h: 1, dist: 12 };
-    const resize = () => {
-        const w = box.clientWidth;
-        const h = box.clientHeight;
-        if (!w || !h) return;
-        const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
-        Object.assign(view, { w, h, dist: Math.max(4.4 / 2 / tanHalf, 4 / 2 / (tanHalf * (w / h))) * 1.05 });
-        renderer.setSize(w, h, false);
-        camera.aspect = w / h;
-        camera.updateProjectionMatrix();
-    };
-    new ResizeObserver(resize).observe(box);
-    resize();
-
-    const tilt = createPointerTilt(box);
-    const target = new THREE.Vector3(0, 2, 0);
-    const start = performance.now();
-    let lastTime = start;
-
-    const render = (now) => {
-        const t = (now - start) / 1000;
-        const dt = Math.min((now - lastTime) / 1000, 0.05);
-        lastTime = now;
-        const rect = box.getBoundingClientRect();
-        const p = clamp((window.innerHeight - rect.top) / (window.innerHeight + rect.height), 0, 1);
-        tilt.update();
-        const azimuth = lerp(-0.45, 0.3, p) + Math.sin(t * 0.3) * 0.04 + tilt.x * 0.3;
-        camera.position.set(Math.sin(azimuth) * view.dist, 2.3 - tilt.y * 0.4, Math.cos(azimuth) * view.dist);
-        camera.lookAt(target);
-        dust.update(t, dt);
-        renderer.render(scene, camera);
-    };
-
-    runWhenVisible(renderer, box, render);
-}
-
-/* ---------- Footer 3D:/* ---------- Footer 3D: si esce dalla Dimora attraverso un arco che si costruisce ---------- */
+/* ---------- Footer 3D: si esce dalla Dimora attraverso un arco che si costruisce ---------- */
 async function initFooter3D() {
     const footer = document.getElementById('site-footer');
     const stage = document.getElementById('footer-stage');
@@ -1532,7 +814,7 @@ async function initFooter3D() {
     runWhenVisible(renderer, stage, render);
 }
 
-/* ---------- Superficie in pietra (stessa texture del 3D) per le lastre dei servizi ---------- */
+/* ---------- Superficie in pietra (stessa texture del 3D della hero) per le lastre dei servizi ---------- */
 function initStoneSurface() {
     try {
         const { colorCanvas } = paintStoneCanvases();
@@ -1542,7 +824,7 @@ function initStoneSurface() {
     }
 }
 
-/* ---------- Titolo della hero/* ---------- Titolo della hero rivelato lettera per lettera ---------- */
+/* ---------- Titolo della hero rivelato lettera per lettera ---------- */
 function initTitleReveal() {
     const title = document.getElementById('hero-title');
     if (!title || prefersReducedMotion) return;
@@ -1692,85 +974,6 @@ function initActiveNav() {
     sections.forEach((section) => observer.observe(section));
 }
 
-/* ---------- Animazioni reveal ---------- */
-function initReveal() {
-    // I titoli di sezione salgono da una maschera
-    document.querySelectorAll('[data-title]').forEach((title) => {
-        title.innerHTML = `<span class="title-line">${title.innerHTML}</span>`;
-    });
-
-    const items = document.querySelectorAll('[data-reveal], [data-title], [data-arch]');
-    if (prefersReducedMotion || !('IntersectionObserver' in window)) {
-        items.forEach((item) => item.classList.add('is-visible'));
-        return;
-    }
-
-    // Le immagini [data-arch] partono ritagliate a zero (clip-path): si osserva il loro contenitore,
-    // perché il browser considera il ritaglio e l'immagine non risulterebbe mai visibile
-    const targets = new Map();
-    const observer = new IntersectionObserver((entries, obs) => {
-        entries.forEach((entry) => {
-            if (!entry.isIntersecting) return;
-            (targets.get(entry.target) || [entry.target]).forEach((item) => item.classList.add('is-visible'));
-            obs.unobserve(entry.target);
-        });
-    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.12 });
-
-    items.forEach((item) => {
-        if (!item.hasAttribute('data-arch')) {
-            observer.observe(item);
-            return;
-        }
-        const container = item.parentElement;
-        if (!targets.has(container)) targets.set(container, []);
-        targets.get(container).push(item);
-        observer.observe(container);
-    });
-}
-
-/* ---------- Parole che si illuminano con lo scroll ---------- */
-function initScrollEffects() {
-    if (prefersReducedMotion) return;
-
-    const effects = [];
-    let frame = null;
-    const run = () => {
-        frame = null;
-        // Un effetto restituisce true se ha bisogno di un altro fotogramma (movimento non ancora concluso)
-        const again = effects.map((effect) => effect()).some(Boolean);
-        if (again) request();
-    };
-    const request = () => {
-        if (!frame) frame = requestAnimationFrame(run);
-    };
-    const onScreen = (rect) => rect.bottom > -100 && rect.top < window.innerHeight + 100;
-
-    // Parole che si illuminano
-    document.querySelectorAll('[data-words]').forEach((block) => {
-        const parts = block.textContent.trim().split(/\s+/);
-        block.textContent = '';
-        parts.forEach((part, index) => {
-            const span = document.createElement('span');
-            span.className = 'w';
-            span.textContent = part;
-            block.append(span);
-            if (index < parts.length - 1) block.append(' ');
-        });
-        const words = [...block.querySelectorAll('.w')];
-        effects.push(() => {
-            const rect = block.getBoundingClientRect();
-            if (!onScreen(rect)) return false;
-            const lit = Math.round(clamp((window.innerHeight * 0.85 - rect.top) / (window.innerHeight * 0.45), 0, 1) * words.length);
-            words.forEach((word, i) => word.classList.toggle('is-lit', i < lit));
-            return false;
-        });
-    });
-
-    window.addEventListener('scroll', request, { passive: true });
-    window.addEventListener('resize', request);
-    request();
-}
-
 /* ---------- Galleria + Lightbox ---------- */
 function initGallery() {
     const grid = document.getElementById('gallery-grid');
@@ -1782,11 +985,7 @@ function initGallery() {
     const items = buttons.map((btn) => {
         const img = btn.querySelector('img');
         btn.setAttribute('aria-label', `Apri foto: ${img.alt}`);
-        return {
-            src: btn.dataset.full,
-            alt: img.alt,
-            aspect: Number(img.getAttribute('width')) / Number(img.getAttribute('height')),
-        };
+        return { src: btn.dataset.full, alt: img.alt };
     });
 
     const img = document.getElementById('lb-img');
@@ -1831,24 +1030,22 @@ function initGallery() {
 
     buttons.forEach((btn, index) => btn.addEventListener('click', () => open(index, btn)));
 
-    // Corridoio 3D in evidenza; la griglia completa si apre con "Mostra tutte le foto"
-    const showGrid = () => {
-        grid.hidden = false;
-        if (moreBtn) moreBtn.parentElement.hidden = true;
-    };
-    if (moreBtn && can3D()) {
-        moreBtn.querySelector('span').textContent = `Mostra tutte le foto (${items.length})`;
-        grid.hidden = true;
-        moreBtn.addEventListener('click', () => {
-            showGrid();
-            moreBtn.setAttribute('aria-expanded', 'true');
-            buttons[0].focus();
-        });
-        initGallery3D(items, open).then((ok) => {
-            if (!ok) showGrid();
-        });
-    } else {
-        showGrid();
+    // Mostra solo le prime foto; le altre con "Mostra tutte le foto"
+    const INITIAL_VISIBLE = 14;
+    const extra = [...grid.children].slice(INITIAL_VISIBLE);
+    if (moreBtn) {
+        if (!extra.length) {
+            moreBtn.parentElement.hidden = true;
+        } else {
+            extra.forEach((li) => li.classList.add('is-hidden'));
+            moreBtn.querySelector('span').textContent = `Mostra tutte le foto (${items.length})`;
+            moreBtn.addEventListener('click', () => {
+                extra.forEach((li) => li.classList.remove('is-hidden'));
+                moreBtn.setAttribute('aria-expanded', 'true');
+                moreBtn.parentElement.hidden = true;
+                extra[0].querySelector('.g-btn').focus();
+            });
+        }
     }
 
     lightbox.addEventListener('click', (event) => {
@@ -2130,16 +1327,10 @@ document.addEventListener('DOMContentLoaded', () => {
     initStoneSurface();
     initTitleReveal();
     initHero3D();
-    initRooms3D();
-    initServices3D();
-    initAbout3D();
-    initLocation3D();
     initFooter3D();
     initMobileMenu();
     initSmoothScroll();
     initActiveNav();
-    initReveal();
-    initScrollEffects();
     initGallery();
     initContactForm();
     initCookies();
